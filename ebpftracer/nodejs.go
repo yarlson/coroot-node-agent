@@ -28,7 +28,7 @@ func (t *Tracer) AttachNodejsProbes(pid uint32, exe string) *UprobeKey {
 		klog.InfofDepth(1, "pid=%d lib=%s: %s", pid, libPath, msg)
 	}
 
-	for _, libPath := range append(getLibuv(pid), proc.Path(pid, "root", exe)) {
+	for _, libPath := range append(getMappedLibs(pid, "libuv"), proc.Path(pid, "root", exe)) {
 		key, ok := t.AcquireGlobalUprobe(libPath, func() []link.Link {
 			links, err := t.attachNodejsUprobes(libPath)
 			if err != nil {
@@ -36,13 +36,62 @@ func (t *Tracer) AttachNodejsProbes(pid uint32, exe string) *UprobeKey {
 				return nil
 			}
 			log(libPath, "nodejs uprobes attached", nil)
-			return links
+			// a file is attached once, and official builds have libuv and TLSWrap in the same node executable
+			return append(links, t.attachNodejsTlsUprobes(libPath, uprobeLog(pid, ""))...)
 		})
 		if ok {
 			return &key
 		}
 	}
 	return nil
+}
+
+func (t *Tracer) AttachNodejsTlsUprobes(pid uint32, exe string) *UprobeKey {
+	log := uprobeLog(pid, "")
+	for _, libPath := range append([]string{proc.Path(pid, "root", exe)}, getMappedLibs(pid, "libnode")...) {
+		key, ok := t.AcquireGlobalUprobe(libPath, func() []link.Link {
+			return t.attachNodejsTlsUprobes(libPath, log)
+		})
+		if ok {
+			return &key
+		}
+	}
+	return nil
+}
+
+func (t *Tracer) attachNodejsTlsUprobes(libPath string, log func(string, error)) []link.Link {
+	if t.disableL7Tracing {
+		return nil
+	}
+	ef, err := OpenELFFile(libPath)
+	if err != nil {
+		log("open elf", err)
+		return nil
+	}
+	defer ef.Close()
+
+	links := t.attachUprobes(libPath, ef, nodejsTlsUprobes(ef), log)
+	if len(links) > 0 {
+		log("nodejs tls uprobes attached", nil)
+	}
+	return links
+}
+
+func nodejsTlsUprobes(ef *ELFFile) []uprobeSpec {
+	var specs []uprobeSpec
+	for _, s := range []uprobeSpec{
+		{symbol: "_ZN4node6crypto7TLSWrap13OnStreamAllocEm", uprobe: "nodejs_tls_stream_alloc_enter"},
+		{symbol: "_ZN4node6crypto7TLSWrap12OnStreamReadElRK8uv_buf_t", uprobe: "nodejs_tls_stream_read_enter"},
+	} {
+		if thunk := ef.FindSymbolBySubstrings("_ZThn", strings.TrimPrefix(s.symbol, "_Z")); thunk != nil {
+			s.symbol = thunk.Name()
+		}
+		specs = append(specs, s)
+	}
+	if _, err := ef.GetSymbol("SSL_write"); err == nil {
+		specs = append(specs, openSslUprobes...)
+	}
+	return specs
 }
 
 func (t *Tracer) attachNodejsUprobes(libPath string) ([]link.Link, error) {
@@ -95,7 +144,7 @@ func (t *Tracer) attachNodejsUprobes(libPath string) ([]link.Link, error) {
 	return links, nil
 }
 
-func getLibuv(pid uint32) []string {
+func getMappedLibs(pid uint32, name string) []string {
 	f, err := os.Open(proc.Path(pid, "maps"))
 	if err != nil {
 		return nil
@@ -110,7 +159,7 @@ func getLibuv(pid uint32) []string {
 			continue
 		}
 		libPath := parts[5]
-		if strings.Contains(libPath, "libuv") {
+		if strings.Contains(libPath, name) {
 			libs[proc.Path(pid, "root", libPath)] = true
 		}
 	}

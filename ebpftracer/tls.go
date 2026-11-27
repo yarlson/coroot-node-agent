@@ -91,6 +91,15 @@ func (t *Tracer) attachUprobes(exePath string, ef *ELFFile, specs []uprobeSpec, 
 	return links
 }
 
+var openSslUprobes = []uprobeSpec{
+	{symbol: "SSL_write", uprobe: "openssl_SSL_write_enter"},
+	{symbol: "SSL_read", uprobe: "openssl_SSL_read_enter"},
+	{symbol: "SSL_read", uretprobe: "openssl_SSL_read_exit"},
+	{symbol: "SSL_write_ex", uprobe: "openssl_SSL_write_enter", optional: true},
+	{symbol: "SSL_read_ex", uprobe: "openssl_SSL_read_ex_enter", optional: true},
+	{symbol: "SSL_read_ex", uretprobe: "openssl_SSL_read_exit", optional: true},
+}
+
 func (t *Tracer) AttachOpenSslUprobes(pid uint32) *UprobeKey {
 	if t.disableL7Tracing {
 		return nil
@@ -108,14 +117,7 @@ func (t *Tracer) AttachOpenSslUprobes(pid uint32) *UprobeKey {
 		}
 		defer ef.Close()
 
-		links := t.attachUprobes(libPath, ef, []uprobeSpec{
-			{symbol: "SSL_write", uprobe: "openssl_SSL_write_enter"},
-			{symbol: "SSL_read", uprobe: "openssl_SSL_read_enter"},
-			{symbol: "SSL_read", uretprobe: "openssl_SSL_read_exit"},
-			{symbol: "SSL_write_ex", uprobe: "openssl_SSL_write_enter", optional: true},
-			{symbol: "SSL_read_ex", uprobe: "openssl_SSL_read_ex_enter", optional: true},
-			{symbol: "SSL_read_ex", uretprobe: "openssl_SSL_read_exit", optional: true},
-		}, log)
+		links := t.attachUprobes(libPath, ef, openSslUprobes, log)
 		if len(links) > 0 {
 			log("libssl uprobes attached (global)", nil)
 		}

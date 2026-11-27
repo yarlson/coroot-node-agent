@@ -62,3 +62,20 @@ int openssl_SSL_read_exit(struct pt_regs *ctx) {
     int ret = (int)PT_REGS_RC(ctx);
     return trace_exit_read(ctx, id, pid, 1, ret);
 }
+
+// libuv calls TLSWrap::OnStreamAlloc right before it reads the socket, so the read binds the fd like an SSL_read inner read
+SEC("uprobe/nodejs_tls_stream_alloc_enter")
+int nodejs_tls_stream_alloc_enter(struct pt_regs *ctx) {
+    __u64 tid = bpf_get_current_pid_tgid();
+    struct ssl_args args = {};
+    args.is_read = 1;
+    bpf_map_update_elem(&ssl_pending, &tid, &args, BPF_ANY);
+    return 0;
+}
+
+SEC("uprobe/nodejs_tls_stream_read_enter")
+int nodejs_tls_stream_read_enter(struct pt_regs *ctx) {
+    __u64 tid = bpf_get_current_pid_tgid();
+    bpf_map_delete_elem(&ssl_pending, &tid);
+    return 0;
+}

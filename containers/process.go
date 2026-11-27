@@ -162,6 +162,9 @@ func (p *Process) instrumentNodejs(exe string, tracer *ebpftracer.Tracer) {
 		p.nodejsPrevStats = &ebpftracer.NodejsStats{}
 		p.addUprobeKey(*key)
 	}
+	if key := tracer.AttachNodejsTlsUprobes(p.Pid, exe); key != nil {
+		p.addUprobeKey(*key)
+	}
 }
 
 func (p *Process) addGpuUsageSample(sample gpu.ProcessUsageSample) {
