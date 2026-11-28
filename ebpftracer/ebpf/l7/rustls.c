@@ -1,5 +1,4 @@
-SEC("uprobe/rustls_write_enter")
-int rustls_write_enter(struct pt_regs *ctx) {
+UPROBE_NO_PREEMPT(rustls_write_enter) {
     __u64 tid = bpf_get_current_pid_tgid();
     __u32 pid = tid >> 32;
 
@@ -13,8 +12,7 @@ int rustls_write_enter(struct pt_regs *ctx) {
     return 0;
 }
 
-SEC("uprobe/rustls_read_enter")
-int rustls_read_enter(struct pt_regs *ctx) {
+UPROBE_NO_PREEMPT(rustls_read_enter) {
     __u64 tid = bpf_get_current_pid_tgid();
     __u32 pid = tid >> 32;
 
@@ -30,8 +28,7 @@ int rustls_read_enter(struct pt_regs *ctx) {
     return trace_enter_read(id, pid, fd, 1, buf, 0, 0);
 }
 
-SEC("uprobe/rustls_read_exit")
-int rustls_read_exit(struct pt_regs *ctx) {
+UPROBE_NO_PREEMPT(rustls_read_exit) {
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     __u64 id = pid_tgid | IS_TLS_READ_ID;
 

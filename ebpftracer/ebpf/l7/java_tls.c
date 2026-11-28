@@ -1,5 +1,4 @@
-SEC("uprobe/java_tls_write_enter")
-int java_tls_write_enter(struct pt_regs *ctx) {
+UPROBE_NO_PREEMPT(java_tls_write_enter) {
     __u64 tid = bpf_get_current_pid_tgid();
     __u32 pid = tid >> 32;
 
@@ -14,8 +13,7 @@ int java_tls_write_enter(struct pt_regs *ctx) {
     return 0;
 }
 
-SEC("uprobe/java_tls_read_exit")
-int java_tls_read_exit(struct pt_regs *ctx) {
+UPROBE_NO_PREEMPT(java_tls_read_exit) {
     __u64 pid_tgid = bpf_get_current_pid_tgid();
 
     struct java_tls_read *r = bpf_map_lookup_elem(&java_tls_last_read, &pid_tgid);
@@ -63,8 +61,7 @@ void java_tls_track_pid(__u32 pid) {
     bpf_map_update_elem(&java_tls_pids, &pid, &dummy, BPF_ANY);
 }
 
-SEC("uprobe/java_tls_engine_read")
-int java_tls_engine_read(struct pt_regs *ctx) {
+UPROBE_NO_PREEMPT(java_tls_engine_read) {
     struct java_tls_engine_io io;
     if (bpf_probe_read(&io, sizeof(io), (void *)PT_REGS_PARM1(ctx))) {
         return 0;
@@ -98,8 +95,7 @@ int java_tls_engine_read(struct pt_regs *ctx) {
     return trace_exit_read(ctx, id, pid, 1, io.size);
 }
 
-SEC("uprobe/java_tls_engine_write")
-int java_tls_engine_write(struct pt_regs *ctx) {
+UPROBE_NO_PREEMPT(java_tls_engine_write) {
     struct java_tls_engine_io io;
     if (bpf_probe_read(&io, sizeof(io), (void *)PT_REGS_PARM1(ctx))) {
         return 0;

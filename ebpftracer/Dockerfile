@@ -1,4 +1,4 @@
-FROM alpine:3.14
+FROM alpine:3.14 AS legacy
 
 RUN apk add llvm clang libbpf-dev linux-headers
 
@@ -18,12 +18,27 @@ RUN clang -g -O2 -target bpf -D__KERNEL_FROM=506 -D__TARGET_ARCH_arm64 -c ebpf.c
 RUN clang -g -O2 -target bpf -D__KERNEL_FROM=512 -D__TARGET_ARCH_arm64 -c ebpf.c -o ebpf512arm64.o && llvm-strip --strip-debug ebpf512arm64.o
 RUN clang -g -O2 -target bpf -D__KERNEL_FROM=512 -D__TARGET_ARCH_arm64 -D__CTX_EXTRA_PADDING -c ebpf.c -o ebpf512arm64cep.o && llvm-strip --strip-debug ebpf512arm64cep.o
 
+FROM alpine:3.15
+
+RUN apk add llvm clang libbpf-dev linux-headers
+
+COPY ebpf /tmp/ebpf
+COPY --from=legacy /tmp/ebpf/*.o /tmp/ebpf/
+WORKDIR /tmp/ebpf
+
+RUN clang -g -O2 -target bpf -D__KERNEL_FROM=610 -D__TARGET_ARCH_x86 -c ebpf.c -o ebpf610x86.o && llvm-strip --strip-debug ebpf610x86.o
+RUN clang -g -O2 -target bpf -D__KERNEL_FROM=610 -D__TARGET_ARCH_x86 -D__CTX_EXTRA_PADDING -c ebpf.c -o ebpf610x86cep.o && llvm-strip --strip-debug ebpf610x86cep.o
+RUN clang -g -O2 -target bpf -D__KERNEL_FROM=610 -D__TARGET_ARCH_arm64 -c ebpf.c -o ebpf610arm64.o && llvm-strip --strip-debug ebpf610arm64.o
+RUN clang -g -O2 -target bpf -D__KERNEL_FROM=610 -D__TARGET_ARCH_arm64 -D__CTX_EXTRA_PADDING -c ebpf.c -o ebpf610arm64cep.o && llvm-strip --strip-debug ebpf610arm64cep.o
+
 RUN echo -en '// generated - do not edit\npackage ebpftracer\n\nvar ebpfProgs = map[string][]struct {\n' > ebpf.go \
 	&& echo -en '\tversion string\n' >> ebpf.go \
 	&& echo -en '\tflags   string\n' >> ebpf.go \
 	&& echo -en '\tprog    []byte\n' >> ebpf.go \
 	&& echo -en '}{\n' >> ebpf.go \
 	&& echo -en '\t"amd64": {\n' >> ebpf.go \
+	&& echo -en '\t\t{"6.10", "ctx-extra-padding", []byte("' >> ebpf.go && gzip -c ebpf610x86cep.o | base64 -w0 >> ebpf.go && echo '")},' >> ebpf.go \
+	&& echo -en '\t\t{"6.10", "", []byte("' >> ebpf.go && gzip -c ebpf610x86.o | base64 -w0 >> ebpf.go && echo '")},' >> ebpf.go \
 	&& echo -en '\t\t{"5.12", "ctx-extra-padding", []byte("' >> ebpf.go && gzip -c ebpf512x86cep.o | base64 -w0 >> ebpf.go && echo '")},' >> ebpf.go \
 	&& echo -en '\t\t{"5.12", "", []byte("' >> ebpf.go && gzip -c ebpf512x86.o | base64 -w0 >> ebpf.go && echo '")},' >> ebpf.go \
 	&& echo -en '\t\t{"5.6", "", []byte("' >> ebpf.go && gzip -c ebpf506x86.o | base64 -w0 >> ebpf.go && echo '")},' >> ebpf.go \
@@ -32,6 +47,8 @@ RUN echo -en '// generated - do not edit\npackage ebpftracer\n\nvar ebpfProgs = 
 	&& echo -en '\t\t{"3.10", "", []byte("' >> ebpf.go && gzip -c ebpf310x86.o | base64 -w0 >> ebpf.go && echo '")},' >> ebpf.go \
 	&& echo -en '\t},\n'>> ebpf.go \
 	&& echo -en '\t"arm64": {\n' >> ebpf.go \
+	&& echo -en '\t\t{"6.10", "ctx-extra-padding", []byte("' >> ebpf.go && gzip -c ebpf610arm64cep.o | base64 -w0 >> ebpf.go && echo '")},' >> ebpf.go \
+	&& echo -en '\t\t{"6.10", "", []byte("' >> ebpf.go && gzip -c ebpf610arm64.o | base64 -w0 >> ebpf.go && echo '")},' >> ebpf.go \
 	&& echo -en '\t\t{"5.12", "ctx-extra-padding", []byte("' >> ebpf.go && gzip -c ebpf512arm64cep.o | base64 -w0 >> ebpf.go && echo '")},' >> ebpf.go \
 	&& echo -en '\t\t{"5.12", "", []byte("' >> ebpf.go && gzip -c ebpf512arm64.o | base64 -w0 >> ebpf.go && echo '")},' >> ebpf.go \
 	&& echo -en '\t\t{"5.6", "", []byte("' >> ebpf.go && gzip -c ebpf506arm64.o | base64 -w0 >> ebpf.go && echo '")},' >> ebpf.go \
