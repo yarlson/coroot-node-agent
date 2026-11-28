@@ -299,6 +299,98 @@ func (t *Tracer) AttachJavaTlsUprobes(pid uint32, nativeLibPath string) *UprobeK
 	return nil
 }
 
+func (t *Tracer) AttachNodejsTlsUprobes(pid uint32, exe string) []UprobeKey {
+	if t.disableL7Tracing || t.uprobes["nodejs_tls_do_write"] == nil {
+		return nil
+	}
+	log := uprobeLog(pid, "")
+	rootExe := proc.Path(pid, "root", exe)
+
+	var nodeKey UprobeKey
+	nodeAttached := false
+	for _, libPath := range append([]string{rootExe}, getMappedLibs(pid, "libnode")...) {
+		key, ok := t.acquireGlobalUprobe("nodejs-tls", libPath, func() []link.Link {
+			ef, err := OpenELFFile(libPath)
+			if err != nil {
+				log("open elf", err)
+				return nil
+			}
+			defer ef.Close()
+			return t.attachUprobes(libPath, ef, []uprobeSpec{
+				{symbol: "_ZN4node15LibuvStreamWrap8OnUvReadElPK8uv_buf_t", uprobe: "nodejs_on_uv_read_enter", uretprobe: "nodejs_on_uv_read_exit"},
+				{symbol: "_ZN4node6crypto7TLSWrap6EncOutEv", uprobe: "nodejs_tls_enc_out", uretprobe: "nodejs_tls_enc_out_exit", optional: true},
+				{symbol: "_ZN4node6crypto7TLSWrap12OnStreamReadElRK8uv_buf_t", uprobe: "nodejs_tls_on_stream_read"},
+				{symbol: "_ZN4node6crypto7TLSWrap8ClearOutEv", uprobe: "nodejs_tls_clear_out_enter", uretprobe: "nodejs_tls_clear_out_exit"},
+				{symbol: "_ZN4node6crypto7TLSWrap7DoWriteEPNS_9WriteWrapEP8uv_buf_tmP11uv_stream_s", uprobe: "nodejs_tls_do_write", uretprobe: "nodejs_tls_do_write_exit"},
+				{symbol: "_ZN4node6crypto7TLSWrap7DestroyEv", uprobe: "nodejs_tls_destroy", optional: true},
+				{symbol: "SSL_read", uprobe: "openssl_SSL_read_enter", uretprobe: "openssl_SSL_read_exit", optional: true},
+			}, log)
+		})
+		if ok {
+			nodeKey = key
+			nodeAttached = true
+			break
+		}
+	}
+	if !nodeAttached {
+		return nil
+	}
+
+	for _, libPath := range append(getLibuv(pid), rootExe) {
+		uvKey, ok := t.acquireGlobalUprobe("nodejs-tls-uv", libPath, func() []link.Link {
+			ef, err := OpenELFFile(libPath)
+			if err != nil {
+				log("open elf", err)
+				return nil
+			}
+			defer ef.Close()
+			links := t.attachUprobes(libPath, ef, []uprobeSpec{
+				{symbol: "uv_read_start", uprobe: "nodejs_uv_read_start"},
+				{symbol: "uv_try_write", uprobe: "nodejs_uv_try_write"},
+			}, log)
+			if len(links) > 0 {
+				log("nodejs TLS uprobes attached", nil)
+			}
+			return links
+		})
+		if ok {
+			return []UprobeKey{nodeKey, uvKey}
+		}
+	}
+	t.ReleaseGlobalUprobes(nodeKey)
+	return nil
+}
+
+func getMappedLibs(pid uint32, substr string) []string {
+	f, err := os.Open(proc.Path(pid, "maps"))
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	seen := map[string]struct{}{}
+	var res []string
+	for scanner.Scan() {
+		parts := strings.Fields(scanner.Text())
+		if len(parts) <= 5 {
+			continue
+		}
+		libPath := parts[5]
+		if !strings.Contains(libPath, substr) {
+			continue
+		}
+		fullPath := proc.Path(pid, "root", libPath)
+		if _, ok := seen[fullPath]; ok {
+			continue
+		}
+		if _, err := os.Stat(fullPath); err == nil {
+			seen[fullPath] = struct{}{}
+			res = append(res, fullPath)
+		}
+	}
+	return res
+}
+
 func getSslLibPath(pid uint32) string {
 	f, err := os.Open(proc.Path(pid, "maps"))
 	if err != nil {
