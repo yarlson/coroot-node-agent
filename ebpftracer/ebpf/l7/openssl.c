@@ -30,8 +30,7 @@ int openssl_SSL_read_ex_enter(struct pt_regs *ctx) {
     return 0;
 }
 
-SEC("uprobe/openssl_SSL_read_exit")
-int openssl_SSL_read_exit(struct pt_regs *ctx) {
+UPROBE_NO_PREEMPT(openssl_SSL_read_exit) {
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     struct ssl_args *args = bpf_map_lookup_elem(&ssl_pending, &pid_tgid);
     if (!args || !args->is_read) {

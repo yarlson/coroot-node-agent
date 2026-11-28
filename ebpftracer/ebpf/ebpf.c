@@ -39,6 +39,35 @@ struct trace_event_raw_sys_exit__stub {
 	long int ret;
 };
 
+#if __KERNEL_FROM >= 610
+extern void bpf_preempt_disable(void) __weak __ksym;
+extern void bpf_preempt_enable(void) __weak __ksym;
+
+// classic uprobes run with preemption enabled, so concurrent tasks on the same CPU can overwrite a per-CPU private BPF stack or scratch map
+#define UPROBE_NO_PREEMPT(name)                                                   \
+static __always_inline int name##_body(struct pt_regs *ctx);                      \
+SEC("uprobe/" #name)                                                              \
+int name(struct pt_regs *ctx) {                                                   \
+    _Static_assert(!__builtin_constant_p(!!bpf_preempt_disable), "must be weak"); \
+    _Static_assert(!__builtin_constant_p(!!bpf_preempt_enable), "must be weak");  \
+    if (bpf_preempt_disable) {                                                    \
+        bpf_preempt_disable();                                                    \
+    }                                                                             \
+    asm volatile("" : "+r"(ctx) :: "memory");                                     \
+    int ret = name##_body(ctx);                                                   \
+    asm volatile("" : "+r"(ret) :: "memory");                                     \
+    if (bpf_preempt_enable) {                                                     \
+        bpf_preempt_enable();                                                     \
+    }                                                                             \
+    return ret;                                                                   \
+}                                                                                 \
+static __always_inline int name##_body(struct pt_regs *ctx)
+#else
+#define UPROBE_NO_PREEMPT(name)                                                   \
+SEC("uprobe/" #name)                                                              \
+int name(struct pt_regs *ctx)
+#endif
+
 #include "nodejs.c"
 #include "python.c"
 #include "proc.c"
