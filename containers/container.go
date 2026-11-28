@@ -1495,6 +1495,14 @@ func (c *Container) attachTlsUprobes(tracer *ebpftracer.Tracer, pid uint32, canB
 			return false
 		}
 	}
+	if !p.nodejsTlsUprobesChecked {
+		p.nodejsTlsUprobesChecked = true
+		if exe, err := os.Readlink(proc.Path(pid, "exe")); err == nil && apptype.IsNodejs(exe) {
+			for _, key := range tracer.AttachNodejsTlsUprobes(pid, exe) {
+				p.addUprobeKey(key)
+			}
+		}
+	}
 	if !p.openSslUprobesChecked {
 		if key := tracer.AttachOpenSslUprobes(pid); key != nil {
 			p.addUprobeKey(*key)

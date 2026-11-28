@@ -42,18 +42,19 @@ type Process struct {
 	isGolangApp   bool
 	isRustApp     bool
 
-	uprobeKeys            []ebpftracer.UprobeKey
-	uprobeKeysLock        sync.Mutex
-	instrumentDone        chan struct{}
-	closed                bool
-	goTlsUprobesChecked   bool
-	openSslUprobesChecked bool
-	rustlsUprobesChecked  bool
-	javaTlsUprobesChecked bool
-	pythonGilChecked      bool
-	nodejsChecked         bool
-	nodejsPrevStats       *ebpftracer.NodejsStats
-	pythonPrevStats       *ebpftracer.PythonStats
+	uprobeKeys              []ebpftracer.UprobeKey
+	uprobeKeysLock          sync.Mutex
+	instrumentDone          chan struct{}
+	closed                  bool
+	goTlsUprobesChecked     bool
+	openSslUprobesChecked   bool
+	rustlsUprobesChecked    bool
+	javaTlsUprobesChecked   bool
+	nodejsTlsUprobesChecked bool
+	pythonGilChecked        bool
+	nodejsChecked           bool
+	nodejsPrevStats         *ebpftracer.NodejsStats
+	pythonPrevStats         *ebpftracer.PythonStats
 
 	gpuUsageSamples []gpu.ProcessUsageSample
 

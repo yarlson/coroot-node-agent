@@ -81,6 +81,7 @@ int name(struct pt_regs *ctx)
 #include "l7/openssl.c"
 #include "l7/rustls.c"
 #include "l7/java_tls.c"
+#include "l7/nodejs_tls.c"
 #else
 #include "tcp/bytes.c"
 #endif

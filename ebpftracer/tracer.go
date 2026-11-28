@@ -107,8 +107,9 @@ const (
 )
 
 type UprobeKey struct {
-	Dev uint64
-	Ino uint64
+	Dev  uint64
+	Ino  uint64
+	Kind string
 }
 
 type globalUprobe struct {
@@ -202,11 +203,15 @@ func (t *Tracer) firstUprobeFailure(path string) bool {
 }
 
 func (t *Tracer) AcquireGlobalUprobe(path string, attach func() []link.Link) (UprobeKey, bool) {
+	return t.acquireGlobalUprobe("", path, attach)
+}
+
+func (t *Tracer) acquireGlobalUprobe(kind, path string, attach func() []link.Link) (UprobeKey, bool) {
 	var stat syscall.Stat_t
 	if err := syscall.Stat(path, &stat); err != nil {
 		return UprobeKey{}, false
 	}
-	key := UprobeKey{Dev: stat.Dev, Ino: stat.Ino}
+	key := UprobeKey{Dev: stat.Dev, Ino: stat.Ino, Kind: kind}
 
 	t.globalUprobesLock.Lock()
 	defer t.globalUprobesLock.Unlock()
